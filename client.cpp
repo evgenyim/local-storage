@@ -192,7 +192,6 @@ int main(int argc, const char** argv) {
         NProto::TPutResponse put_response;
         if (!put_response.ParseFromArray(response.data(), response.size())) {
             // TODO proper handling
-
             abort();
         }
 
@@ -203,7 +202,7 @@ int main(int argc, const char** argv) {
         return std::string();
     };
 
-    Handler handler = [&] (char message_type, const std::string& response) {
+    Handler handler = [&] (int fd, char message_type, const std::string& response) {
         switch (message_type) {
             case PUT_RESPONSE: return handle_put(response);
             case GET_RESPONSE: return handle_get(response);

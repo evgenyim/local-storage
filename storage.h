@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <cstdio>
 #include <fstream>
+#include <queue>
 
 
 class PersistentStorage {
@@ -17,12 +18,16 @@ private:
     int fd;
     FILE *file;
     std::string filename = "data.log";
+    std::queue<std::pair<std::string, uint64_t>> not_confirmed;
+    std::mutex mutex;
 
     bool write_to_disk(const std::string &key, uint64_t value) {
         std::string to_write = key + " " + std::to_string(value) + " ";
         int res = fprintf(file, "%s", to_write.data());
         if (res == to_write.size()) {
             fflush(file);
+            std::lock_guard<std::mutex> g(mutex);
+            not_confirmed.push({key, value});
 //            fsync(fd);
             return true;
         }
@@ -53,15 +58,24 @@ public:
     }
 
     void put(const std::string &key, uint64_t value) {
-        if (write_to_disk(key, value))
-            _storage[key] = value;
+        write_to_disk(key, value);
     }
 
     uint64_t  *find(const std::string &key) {
+        std::lock_guard<std::mutex> g(mutex);
         auto it = _storage.find(key);
         if (it != _storage.end())
             return &it->second;
         return nullptr;
+    }
+
+    void sync() {
+        fsync(fd);
+        std::lock_guard<std::mutex> g(mutex);
+        while(!not_confirmed.empty()) {
+            _storage[not_confirmed.front().first] = not_confirmed.front().second;
+            not_confirmed.pop();
+        }
     }
 };
 
