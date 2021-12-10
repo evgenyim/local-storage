@@ -192,6 +192,7 @@ private:
         if (file_id + 1 != next_file_id)
             f = fopen((filename + std::to_string(file_id)).c_str(), "r");
         uint64_t key_size;
+        fseek(f, file_offset, SEEK_SET);
         fread(&key_size, sizeof(uint64_t), 1, f);
         std::string key(key_size, 0);
         fread(&key[0], sizeof(char), key_size, f);
