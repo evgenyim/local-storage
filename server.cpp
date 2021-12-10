@@ -211,7 +211,8 @@ int main(int argc, const char** argv)
 
     // TODO on-disk storage
 //    std::unordered_map<std::string, uint64_t> storage;
-    PersistentStorage storage;
+    Storage storage;
+    PersistentStorage storage_;
     std::unordered_map<int, std::queue<std::string>> states_put_requests;
     std::mutex put_request_queue_mutex, state_output_queue_mutex;
 
@@ -227,7 +228,7 @@ int main(int argc, const char** argv)
 
         NProto::TGetResponse get_response;
         get_response.set_request_id(get_request.request_id());
-        auto p = storage.find(get_request.key());
+        auto p = storage_.find(get_request.key());
         if (p != nullptr) {
             get_response.set_offset(*p);
         }
@@ -249,7 +250,7 @@ int main(int argc, const char** argv)
 
         LOG_DEBUG_S("put_request: " << put_request.ShortDebugString());
 
-        storage.put(put_request.key(), put_request.offset());
+        storage_.put(put_request.key(), put_request.offset());
 
         NProto::TPutResponse put_response;
         put_response.set_request_id(put_request.request_id());
@@ -266,10 +267,63 @@ int main(int argc, const char** argv)
         return r;
     };
 
+    auto handle_get2 = [&] (const std::string& request) {
+        NProto::TGetRequest2 get_request;
+        if (!get_request.ParseFromArray(request.data(), request.size())) {
+            // TODO proper handling
+
+            abort();
+        }
+
+        LOG_DEBUG_S("get_request2: " << get_request.ShortDebugString());
+
+        NProto::TGetResponse2 get_response;
+        get_response.set_request_id(get_request.request_id());
+
+        std::string ret;
+        if (storage.get(get_request.key(), &ret))
+            get_response.set_value(ret);
+
+        std::stringstream response;
+        serialize_header(GET_RESPONSE2, get_response.ByteSizeLong(), response);
+        get_response.SerializeToOstream(&response);
+
+        return response.str();
+    };
+
+    auto handle_put2 = [&] (int fd, const std::string& request) {
+        NProto::TPutRequest2 put_request;
+        if (!put_request.ParseFromArray(request.data(), request.size())) {
+            // TODO proper handling
+
+            abort();
+        }
+
+        LOG_DEBUG_S("put_request2: " << put_request.ShortDebugString());
+
+        storage.put(put_request.key(), put_request.value());
+
+        NProto::TPutResponse2 put_response;
+        put_response.set_request_id(put_request.request_id());
+
+        std::stringstream response;
+        serialize_header(PUT_RESPONSE2, put_response.ByteSizeLong(), response);
+        put_response.SerializeToOstream(&response);
+
+        std::lock_guard<std::mutex> guard(put_request_queue_mutex);
+        states_put_requests[fd].push(response.str());
+
+        std::string r;
+
+        return r;
+    };
+
     Handler handler = [&] (int fd, char request_type, const std::string& request) {
         switch (request_type) {
             case PUT_REQUEST: return handle_put(fd, request);
             case GET_REQUEST: return handle_get(request);
+            case PUT_REQUEST2: return handle_put2(fd, request);
+            case GET_REQUEST2: return handle_get2(request);
         }
 
         // TODO proper handling
