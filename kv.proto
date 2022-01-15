@@ -2,10 +2,30 @@ syntax = "proto3";
 
 package NProto;
 
-message TPutRequest {
+message TPutNumberRequest {
     uint64 request_id = 1;
     string key = 2;
     uint64 offset = 3;
+}
+
+message TPutNumberResponse {
+    uint64 request_id = 1;
+}
+
+message TGetNumberRequest {
+    uint64 request_id = 1;
+    string key = 2;
+}
+
+message TGetNumberResponse {
+    uint64 request_id = 1;
+    uint64 offset = 2;
+}
+
+message TPutRequest {
+    uint64 request_id = 1;
+    string key = 2;
+    string value = 3;
 }
 
 message TPutResponse {
@@ -18,26 +38,6 @@ message TGetRequest {
 }
 
 message TGetResponse {
-    uint64 request_id = 1;
-    uint64 offset = 2;
-}
-
-message TPutRequest2 {
-    uint64 request_id = 1;
-    string key = 2;
-    string value = 3;
-}
-
-message TPutResponse2 {
-    uint64 request_id = 1;
-}
-
-message TGetRequest2 {
-    uint64 request_id = 1;
-    string key = 2;
-}
-
-message TGetResponse2 {
     uint64 request_id = 1;
     string value = 2;
 }
