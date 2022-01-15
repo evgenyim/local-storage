@@ -14,6 +14,10 @@ constexpr char PUT_REQUEST = 1U;
 constexpr char PUT_RESPONSE = 2U;
 constexpr char GET_REQUEST = 3U;
 constexpr char GET_RESPONSE = 4U;
+constexpr char PUT_NUMBER_REQUEST = 5U;
+constexpr char PUT_NUMBER_RESPONSE = 6U;
+constexpr char GET_NUMBER_REQUEST = 7U;
+constexpr char GET_NUMBER_RESPONSE = 8U;
 
 struct Message
 {

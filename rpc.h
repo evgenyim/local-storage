@@ -33,7 +33,7 @@ using SocketStatePtr = std::shared_ptr<SocketState>;
 
 // input -> output func
 using Handler =
-    std::function<std::string(char message_type, const std::string& message)>;
+    std::function<std::string(int fd, char message_type, const std::string& message)>;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -42,14 +42,14 @@ inline bool process_input(SocketState& state, const Handler& handler)
     bool success = true;
 
     char buf[512];
+    int total_read = 0;
     while (true) {
         auto len = std::min(sizeof(buf), state.current_message.to_read());
         auto count = recv(state.fd, buf, len, 0);
 
         if (count == -1) {
             if (errno != EAGAIN) {
-                // TODO proper logging
-                perror("send failed");
+                LOG_PERROR("recv failed");
 
                 success = false;
             }
@@ -59,6 +59,8 @@ inline bool process_input(SocketState& state, const Handler& handler)
             break;
         }
 
+        total_read += count;
+
         state.current_message.on_data(buf, count);
 
         if (count < len) {
@@ -66,16 +68,21 @@ inline bool process_input(SocketState& state, const Handler& handler)
         }
 
         if (state.current_message.is_complete()) {
-            auto response = handler(
+            auto response = handler(state.fd,
                 state.current_message.message_type,
                 state.current_message.buffer);
 
             state.current_message.reset();
 
-            if (response.size()) {
+            if (!response.empty()) {
                 state.output_queue.push_back(std::move(response));
             }
         }
+    }
+
+    if (total_read == 0) {
+        LOG_INFO("conn closed");
+        success = false;
     }
 
     return success;
@@ -111,8 +118,7 @@ inline bool process_output(SocketState& state)
 
         if (count == -1) {
             if (errno != EAGAIN) {
-                // TODO proper logging
-                perror("send failed");
+                LOG_PERROR("send failed");
 
                 success = false;
             }

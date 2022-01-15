@@ -1,5 +1,5 @@
-#CC=g++ -g -O3 -DNDEBUG
-CC=g++ -g
+CC=g++ -g -O3 -DNDEBUG
+#CC=g++ -g
 PROTOC=$(PROTOBUF)/protoc
 
 PROTOBUF=./protobuf-3.18.1/src
@@ -8,9 +8,15 @@ INC=-I $(PROTOBUF)
 
 COMMON_O=kv.pb.o log.o protocol.o rpc.o
 
-all: client server
+all: client simple_client server
 
 # binaries and main object files
+
+simple_client: simple_client.o common
+	$(CC) -o simple_client simple_client.o $(COMMON_O) $(LIB)
+
+simple_client.o: simple_client.cpp common
+	$(CC) -c simple_client.cpp $(INC)
 
 client: client.o common
 	$(CC) -o client client.o $(COMMON_O) $(LIB)
@@ -40,3 +46,6 @@ protocol: protocol.h protocol.cpp
 
 rpc: rpc.h rpc.cpp
 	$(CC) -c rpc.cpp $(INC)
+	
+clean:
+	rm config data.log str_data_*
