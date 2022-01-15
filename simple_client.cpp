@@ -47,9 +47,9 @@ int main(int argc, const char** argv) {
 
     const auto port = atoi(argv[1]);
     const std::string key = argv[2];
-    int v = -1;
+    std::string v;
     if (argc > 3) {
-        v = atoi(argv[3]);
+        v = argv[3];
     }
 
     /*
@@ -95,10 +95,10 @@ int main(int argc, const char** argv) {
     SocketState state;
     state.fd = socketfd;
 
-    if (v >= 0) {
+    if (!v.empty()) {
         NProto::TPutRequest put_request;
         put_request.set_key(key);
-        put_request.set_offset(v);
+        put_request.set_value(v);
 
         std::stringstream message;
         serialize_header(PUT_REQUEST, put_request.ByteSizeLong(), message);
@@ -152,7 +152,7 @@ int main(int argc, const char** argv) {
         return std::string();
     };
 
-    Handler handler = [&] (char message_type, const std::string& response) {
+    Handler handler = [&] (int fd, char message_type, const std::string& response) {
         switch (message_type) {
             case PUT_RESPONSE: return handle_put(response);
             case GET_RESPONSE: return handle_get(response);
