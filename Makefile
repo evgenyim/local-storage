@@ -46,3 +46,6 @@ protocol: protocol.h protocol.cpp
 
 rpc: rpc.h rpc.cpp
 	$(CC) -c rpc.cpp $(INC)
+	
+clean:
+	rm config data.log str_data_*
