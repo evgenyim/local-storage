@@ -113,24 +113,6 @@ int main(int argc, const char** argv) {
 
     uint64_t request_count = 0;
 
-    auto stage_put_number = [&] () {
-        for (int i = 0; i < max_requests; ++i) {
-            std::stringstream key;
-            key << "key" << i;
-
-            NProto::TPutNumberRequest put_request;
-            put_request.set_request_id(request_count++);
-            put_request.set_key(key.str());
-            put_request.set_offset(generate_data(i));
-
-            std::stringstream message;
-            serialize_header(PUT_NUMBER_REQUEST, put_request.ByteSizeLong(), message);
-            put_request.SerializeToOstream(&message);
-
-            state.output_queue.push_back(message.str());
-        }
-    };
-
     auto stage_put = [&] () {
         for (int i = 0; i < max_requests; ++i) {
             std::stringstream key;
@@ -151,24 +133,6 @@ int main(int argc, const char** argv) {
 
     std::unordered_map<uint64_t, uint64_t> expected_gets;
     std::unordered_map<uint64_t, std::string> expected_gets2;
-
-    auto stage_get_number = [&] () {
-        for (int i = 0; i < max_requests; ++i) {
-            std::stringstream key;
-            key << "key" << i;
-
-            NProto::TGetNumberRequest get_request;
-            get_request.set_request_id(request_count++);
-            get_request.set_key(key.str());
-            expected_gets[get_request.request_id()] = generate_data(i);
-
-            std::stringstream message;
-            serialize_header(GET_NUMBER_REQUEST, get_request.ByteSizeLong(), message);
-            get_request.SerializeToOstream(&message);
-
-            state.output_queue.push_back(message.str());
-        }
-    };
 
     auto stage_get = [&] () {
         for (int i = 0; i < max_requests; ++i) {
@@ -191,8 +155,6 @@ int main(int argc, const char** argv) {
     std::unordered_map<std::string, std::function<void()>> stage2func = {
         {"put", stage_put},
         {"get", stage_get},
-        {"put2", stage_put_number},
-        {"get2", stage_get_number},
     };
 
     for (const auto& stage: stages) {
@@ -205,31 +167,6 @@ int main(int argc, const char** argv) {
 
     int response_count = 0;
 
-    auto handle_get_number = [&] (const std::string& response) {
-        NProto::TGetNumberResponse get_response;
-        if (!get_response.ParseFromArray(response.data(), response.size())) {
-            // TODO proper handling
-
-            abort();
-        }
-
-        LOG_DEBUG_S("get_response: " << get_response.ShortDebugString());
-
-        auto it = expected_gets.find(get_response.request_id());
-        if (it == expected_gets.end()) {
-            LOG_ERROR_S("unexpected get request_id "
-                << get_response.request_id());
-        } else if (it->second != get_response.offset()) {
-            LOG_ERROR_S("unexpected data for get request_id "
-                << get_response.request_id()
-                << ", actual " << get_response.offset()
-                << ", expected " << it->second);
-        }
-
-        ++response_count;
-
-        return std::string();
-    };
 
     auto handle_get = [&] (const std::string& response) {
         NProto::TGetResponse get_response;
@@ -239,14 +176,14 @@ int main(int argc, const char** argv) {
             abort();
         }
 
-        LOG_DEBUG_S("get_response2: " << get_response.ShortDebugString());
+        LOG_DEBUG_S("get_response: " << get_response.ShortDebugString());
 
         auto it = expected_gets2.find(get_response.request_id());
         if (it == expected_gets2.end()) {
-            LOG_ERROR_S("unexpected get2 request_id "
+            LOG_ERROR_S("unexpected get request_id "
                                 << get_response.request_id());
         } else if (it->second != get_response.value()) {
-            LOG_ERROR_S("unexpected data for get2 request_id "
+            LOG_ERROR_S("unexpected data for get request_id "
                                 << get_response.request_id()
                                 << ", actual " << get_response.value()
                                 << ", expected " << it->second);
@@ -257,8 +194,9 @@ int main(int argc, const char** argv) {
         return std::string();
     };
 
-    auto handle_put_number = [&] (const std::string& response) {
-        NProto::TPutNumberResponse put_response;
+
+    auto handle_put = [&] (const std::string& response) {
+        NProto::TPutResponse put_response;
         if (!put_response.ParseFromArray(response.data(), response.size())) {
             // TODO proper handling
             abort();
@@ -271,26 +209,10 @@ int main(int argc, const char** argv) {
         return std::string();
     };
 
-    auto handle_put = [&] (const std::string& response) {
-        NProto::TPutResponse put_response;
-        if (!put_response.ParseFromArray(response.data(), response.size())) {
-            // TODO proper handling
-            abort();
-        }
-
-        LOG_DEBUG_S("put_response2: " << put_response.ShortDebugString());
-
-        ++response_count;
-
-        return std::string();
-    };
-
     Handler handler = [&] (int fd, char message_type, const std::string& response) {
         switch (message_type) {
             case PUT_RESPONSE: return handle_put(response);
             case GET_RESPONSE: return handle_get(response);
-            case PUT_NUMBER_RESPONSE: return handle_put_number(response);
-            case GET_NUMBER_RESPONSE: return handle_get_number(response);
         }
 
         // TODO proper handling

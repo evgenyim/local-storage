@@ -17,7 +17,7 @@ public:
     PersistentStorage(const std::string &filename="data.log") {
         this->filename = filename;
         load_from_disk();
-        file = fopen(filename.c_str(), "a");
+        file = fopen(this->filename.c_str(), "a");
         fd = fileno(file);
     }
     ~PersistentStorage() {
@@ -51,12 +51,15 @@ private:
     int fd;
     FILE *file;
     std::string filename = "data.log";
+    std::string filename2 = "data2.log";
+    std::string config_filename = "data_config";
     std::queue<std::pair<std::string, uint64_t>> not_confirmed;
     std::mutex mutex;
 
     bool write_to_disk(const std::string &key, uint64_t value) {
         std::string to_write = key + " " + std::to_string(value) + " ";
         int res = fprintf(file, "%s", to_write.data());
+//        int res = fprintf(file, "%s %lu", key.data(), value);
         if (res == to_write.size()) {
             fflush(file);
             std::lock_guard<std::mutex> g(mutex);
@@ -67,24 +70,38 @@ private:
     }
 
     void load_from_disk() {
+        load_config();
         std::ifstream f(filename);
         std::string key;
         uint64_t value;
         while (f >> key >> value)
             _storage[key] = value;
         f.close();
-        std::ofstream f_rewrite(filename);
+        std::ofstream f_rewrite(filename2);
         for (auto &it : _storage)
             f_rewrite << it.first << " " << it.second << " ";
         f_rewrite.close();
+        filename.swap(filename2);
+        save_config();
+        std::remove(filename2.c_str());
     }
 
     void on_shutdown() {
         fclose(file);
-        std::ofstream f_rewrite(filename);
-        for (auto &it : _storage)
-            f_rewrite << it.first << " " << it.second << " ";
-        f_rewrite.close();
+    }
+
+    void save_config() {
+        std::ofstream f(config_filename);
+        f << filename;
+    }
+
+    void load_config() {
+        std::ifstream f(config_filename);
+        std::string tmp;
+        if (!(f >> tmp))
+            return;
+        if (tmp != filename)
+            (filename.swap(filename2));
     }
 
 };
@@ -101,8 +118,12 @@ public:
         on_shutdown();
     }
 
-    void put(const std::string &key, const std::string &value) {
+    bool put(const std::string &key, const std::string &value) {
+        if (!load_completed) {
+            return false;
+        }
         write_to_log(key, value);
+        return true;
     }
 
     bool get(const std::string &key, std::string *value) {
@@ -120,17 +141,7 @@ public:
             abort();
     }
 
-
 private:
-    PersistentStorage map;
-    FILE *file = nullptr;
-    int fd;
-    int first_file_id = 0, next_file_id = 0;
-    std::string filename = "str_data_";
-    std::string config_filename = "config";
-    uint64_t max_size = 1024 * 1024 * 64;
-    std::mutex mutex;
-
     void load_from_disk() {
         load_config();
         open_new_file();
@@ -165,6 +176,7 @@ private:
         }
         first_file_id = first_new_file_id - 1;
         save_config();
+        load_completed = true;
     }
 
     void write_to_log(const std::string &key, const std::string &value) {
@@ -215,13 +227,15 @@ private:
         read_bytes = fread(&key_size, sizeof(uint64_t), 1, f);
         if (read_bytes == 0)
             return std::make_pair(std::string(), std::string());
-
         std::string key(key_size, 0);
-        fread(&key[0], sizeof(char), key_size, f);
+        if (fread(&key[0], sizeof(char), key_size, f) == 0)
+            return std::make_pair(std::string(), std::string());
         uint64_t value_size;
-        fread(&value_size, sizeof(uint64_t), 1, f);
+        if (fread(&value_size, sizeof(uint64_t), 1, f) == 0)
+            return std::make_pair(std::string(), std::string());
         std::string value(value_size, 0);
-        fread(&value[0], sizeof(char), value_size, f);
+        if (fread(&value[0], sizeof(char), value_size, f) == 0)
+            return std::make_pair(std::string(), std::string());
         return std::make_pair(key, value);
     }
 
@@ -245,6 +259,17 @@ private:
             abort();
         fclose(file);
     }
+
+    PersistentStorage map;
+    FILE *file = nullptr;
+    int fd;
+    int first_file_id = 0, next_file_id = 0;
+    std::string filename = "str_data_";
+    std::string config_filename = "config";
+    uint64_t max_size = 1024 * 1024 * 64;
+    bool load_completed = false;
+    std::mutex mutex;
+
 
 };
 

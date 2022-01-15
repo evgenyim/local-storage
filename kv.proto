@@ -30,6 +30,7 @@ message TPutRequest {
 
 message TPutResponse {
     uint64 request_id = 1;
+    string value = 2;
 }
 
 message TGetRequest {

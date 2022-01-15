@@ -209,63 +209,11 @@ int main(int argc, const char** argv)
      * handler function
      */
 
-    // TODO on-disk storage
-//    std::unordered_map<std::string, uint64_t> storage;
     Storage storage;
-    PersistentStorage storage_;
     std::unordered_map<int, std::queue<std::string>> states_put_requests;
-    std::mutex put_request_queue_mutex, state_output_queue_mutex;
+    std::mutex states_mutex;
 
-    auto handle_get_number = [&] (const std::string& request) {
-        NProto::TGetNumberRequest get_request;
-        if (!get_request.ParseFromArray(request.data(), request.size())) {
-            // TODO proper handling
 
-            abort();
-        }
-
-        LOG_DEBUG_S("get_number_request: " << get_request.ShortDebugString());
-
-        NProto::TGetNumberResponse get_response;
-        get_response.set_request_id(get_request.request_id());
-        auto p = storage_.find(get_request.key());
-        if (p != nullptr) {
-            get_response.set_offset(*p);
-        }
-
-        std::stringstream response;
-        serialize_header(GET_NUMBER_RESPONSE, get_response.ByteSizeLong(), response);
-        get_response.SerializeToOstream(&response);
-
-        return response.str();
-    };
-
-    auto handle_put_number = [&] (int fd, const std::string& request) {
-        NProto::TPutNumberRequest put_request;
-        if (!put_request.ParseFromArray(request.data(), request.size())) {
-            // TODO proper handling
-
-            abort();
-        }
-
-        LOG_DEBUG_S("put_number_request: " << put_request.ShortDebugString());
-
-        storage_.put(put_request.key(), put_request.offset());
-
-        NProto::TPutNumberResponse put_response;
-        put_response.set_request_id(put_request.request_id());
-
-        std::stringstream response;
-        serialize_header(PUT_NUMBER_RESPONSE, put_response.ByteSizeLong(), response);
-        put_response.SerializeToOstream(&response);
-
-        std::lock_guard<std::mutex> guard(put_request_queue_mutex);
-        states_put_requests[fd].push(response.str());
-
-        std::string r;
-
-        return r;
-    };
 
     auto handle_get = [&] (const std::string& request) {
         NProto::TGetRequest get_request;
@@ -299,18 +247,20 @@ int main(int argc, const char** argv)
             abort();
         }
 
-        LOG_DEBUG_S("put_request2: " << put_request.ShortDebugString());
+        LOG_DEBUG_S("put_request: " << put_request.ShortDebugString());
 
-        storage.put(put_request.key(), put_request.value());
+        bool res = storage.put(put_request.key(), put_request.value());
 
         NProto::TPutResponse put_response;
         put_response.set_request_id(put_request.request_id());
+
+        if (!res)
+            put_response.set_value("Put failed");
 
         std::stringstream response;
         serialize_header(PUT_RESPONSE, put_response.ByteSizeLong(), response);
         put_response.SerializeToOstream(&response);
 
-        std::lock_guard<std::mutex> guard(put_request_queue_mutex);
         states_put_requests[fd].push(response.str());
 
         std::string r;
@@ -322,8 +272,8 @@ int main(int argc, const char** argv)
         switch (request_type) {
             case PUT_REQUEST: return handle_put(fd, request);
             case GET_REQUEST: return handle_get(request);
-            case PUT_NUMBER_REQUEST: return handle_put_number(fd, request);
-            case GET_NUMBER_REQUEST: return handle_get_number(request);
+//            case PUT_NUMBER_REQUEST: return handle_put_number(fd, request);
+//            case GET_NUMBER_REQUEST: return handle_get_number(request);
         }
 
         // TODO proper handling
@@ -352,11 +302,10 @@ int main(int argc, const char** argv)
             [&]() {
                 while (running) {
                     storage.sync();
+                    std::lock_guard<std::mutex> guard(states_mutex);
                     for(auto &item: states_put_requests) {
                         auto &q = states_put_requests[item.first];
                         auto state = states.at(item.first);
-                        std::lock_guard<std::mutex> guard2(state_output_queue_mutex);
-                        std::lock_guard<std::mutex> guard(put_request_queue_mutex);
                         while(!q.empty()) {
                             state->output_queue.push_back(q.front());
                             q.pop();
@@ -395,7 +344,7 @@ int main(int argc, const char** argv)
                     if (!state) {
                         break;
                     }
-
+                    std::lock_guard<std::mutex> guard(states_mutex);
                     states[state->fd] = state;
                     states_put_requests[state->fd] = std::queue<std::string>();
                 }
@@ -406,9 +355,8 @@ int main(int argc, const char** argv)
             bool closed = false;
             if (events[i].events & EPOLLIN) {
                 auto state = states.at(fd);
-                std::lock_guard<std::mutex> guard(state_output_queue_mutex);
+                std::lock_guard<std::mutex> guard(states_mutex);
                 if (!process_input(*state, handler)) {
-                    LOG_INFO_S("FINILIZING1");
                     finalize(fd);
                     closed = true;
                 }
@@ -416,9 +364,8 @@ int main(int argc, const char** argv)
 
             if (events[i].events & EPOLLOUT && !closed) {
                 auto state = states.at(fd);
-                std::lock_guard<std::mutex> guard(state_output_queue_mutex);
+                std::lock_guard<std::mutex> guard(states_mutex);
                 if (!process_output(*state)) {
-                    LOG_INFO_S("FINILIZING2")
                     finalize(fd);
                 }
             }

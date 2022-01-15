@@ -48,4 +48,4 @@ rpc: rpc.h rpc.cpp
 	$(CC) -c rpc.cpp $(INC)
 	
 clean:
-	rm config data.log str_data_*
+	rm -f config data_config data.log data2.log str_data_*
